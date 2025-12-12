@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>AutoTCO Logic Tests</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 2rem;
+        }
+
+        .success {
+            color: green;
+        }
+
+        .fail {
+            color: red;
+            font-weight: bold;
+        }
+
+        .test-case {
+            margin-bottom: 0.5rem;
+        }
+    </style>
+    <script src="../logic.js"></script>
+</head>
+
+<body>
+    <h1>TCO Logic Tests</h1>
+    <div id="results"></div>
+
+    <script>
+        const results = document.getElementById('results');
+
+        function assert(desc, condition) {
+            const div = document.createElement('div');
+            div.className = 'test-case ' + (condition ? 'success' : 'fail');
+            div.textContent = `${condition ? ' PASS ' : ' FAIL '} : ${desc}`;
+            results.appendChild(div);
+        }
+
+        function assertAlmostEqual(desc, val1, val2, epsilon = 1) {
+            const diff = Math.abs(val1 - val2);
+            assert(`${desc} (${val1} vs ${val2})`, diff <= epsilon);
+        }
+
+        // Test Data
+        const baseData = {
+            years: 5,
+            mileage: 10000,
+            fuelPrice: 50,
+            breakdownProb: 0,
+            repairPrice: 100000,
+            currentMileage: 0,
+            overhaulInterval: 1000000, // Never
+            // Old
+            oldCons: 10,
+            oldMaint: 0,
+            oldTax: 0,
+            oldPrice: 1000000,
+            oldDepr: 0,
+            // New
+            newPrice: 1000000,
+            newCons: 10,
+            newMaint: 0,
+            newTax: 0,
+            newDepr: 0
+        };
+
+        // --- Tests ---
+
+        // Test 1: Identical Cars should have identical TCO (Switch Cost = 0)
+        // Switch Cost = NewPrice (1M) - OldPrice (1M) = 0.
+        // Ops = same.
+        // TCO should be 0 for both if all ops are 0.
+        // But Fuel is present.
+        // Fuel = (10000/100)*10*50 = 1000*50 = 50,000 / year.
+        // 5 Years = 250,000.
+        try {
+            const res1 = TCOLogic.calculate(baseData);
+            assertAlmostEqual("Identical Cars: Final Old Cost", res1.finalOld, 250000);
+            assertAlmostEqual("Identical Cars: Final New Cost", res1.finalNew, 250000);
+        } catch (e) {
+            assert("Test 1 Crashed: " + e.message, false);
+        }
+
+        // Test 2: Depreciation Impact
+        // Old Car loses 10% per year.
+        // New Car loses 0%.
+        // Old Price 1M. Year 1: 900k. Loss = 100k + Ops.
+        try {
+            const data2 = { ...baseData, oldDepr: 10, oldMaint: 0, fuelPrice: 0 };
+            const res2 = TCOLogic.calculate(data2);
+            // Year 1 Loss: 10% of 1M = 100,000.
+            // Year 2 Loss: 10% of 900k = 90,000. Total = 190,000.
+            // Year 5 Loss: 1M * (1 - 0.9^5) = 1M * (1 - 0.59049) = 409510.
+            assertAlmostEqual("Depreciation Only (Old)", res2.finalOld, 409510);
+        } catch (e) {
+            assert("Test 2 Crashed: " + e.message, false);
+        }
+
+        // Test 3: Upgrade Cost (Switch Cost)
+        // Old = 500k, New = 1M.
+        // Switch Cost = 500k.
+        // Ops = 0.
+        // Old Loss = 0 (No Depr).
+        // New Loss = 500k (Switch) + 0 (No Ops, No Depr).
+        try {
+            const data3 = { ...baseData, oldPrice: 500000, newPrice: 1000000, fuelPrice: 0 };
+            const res3 = TCOLogic.calculate(data3);
+            assertAlmostEqual("Old Cost Zero", res3.finalOld, 0);
+            assertAlmostEqual("New Cost = Switch Price", res3.finalNew, 500000);
+        } catch (e) {
+            assert("Test 3 Crashed: " + e.message, false);
+        }
+
+        // Test 4: Overhaul Logic
+        // Interval 50k. Mileage 20k/yr. Start 40k.
+        // Y1: 60k (Trigger 50k).
+        // Y2: 80k.
+        // Y3: 100k (Trigger 100k).
+        try {
+            const data4 = {
+                ...baseData,
+                currentMileage: 40000,
+                mileage: 20000,
+                overhaulInterval: 50000,
+                repairPrice: 1000,
+                fuelPrice: 0,
+                years: 3
+            };
+            const res4 = TCOLogic.calculate(data4);
+            // Overhauls at 50k, 100k. Total 2.
+            assert("Overhaul Count", res4.overhaulCount === 2);
+            // Cost: 2 * 1000 = 2000.
+            assertAlmostEqual("Overhaul Cost included in Old Data", res4.finalOld, 2000);
+        } catch (e) {
+            assert("Test 4 Crashed: " + e.message, false);
+        }
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "car-tco-calculator",
+  "version": "1.0.0",
+  "description": "TCO Calculator for Cars",
+  "main": "script.js",
+  "scripts": {
+    "test": "node tests/node-test.js"
+  },
+  "keywords": [
+    "tco",
+    "car",
+    "calculator"
+  ],
+  "author": "",
+  "license": "ISC"
+}

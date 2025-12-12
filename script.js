@@ -11,6 +11,7 @@ const inputs = {
     repairCost: document.getElementById('repair-cost'),
     oldDepr: document.getElementById('old-depreciation'),
     newDepr: document.getElementById('new-depreciation'),
+    overhaulInterval: document.getElementById('overhaul-interval'),
 
     // Common
     mileage: document.getElementById('mileage'),
@@ -25,13 +26,30 @@ const inputs = {
 };
 
 const displays = {
-    oldConsumption: document.getElementById('old-consumption-val'),
+    // Value Displays
+    oldPrice: document.getElementById('old-price-val'),
+    oldCons: document.getElementById('old-consumption-val'),
+    oldMaint: document.getElementById('old-maintenance-val'),
+    oldTax: document.getElementById('old-tax-val'),
+
+    overhaulInt: document.getElementById('overhaul-interval-val'),
+    breakdownProb: document.getElementById('breakdown-prob-val'),
+    repairCost: document.getElementById('repair-cost-val'),
+
+    newPrice: document.getElementById('new-price-val'),
+    newCons: document.getElementById('new-consumption-val'),
+    newMaint: document.getElementById('new-maintenance-val'),
+    newTax: document.getElementById('new-tax-val'),
+
     mileage: document.getElementById('mileage-val'),
     years: document.getElementById('years-val'),
-    newConsumption: document.getElementById('new-consumption-val'),
-    breakdownProb: document.getElementById('breakdown-prob-val'),
-    resYears: document.getElementById('res-years'),
+    fuelPrice: document.getElementById('fuel-price-val'),
 
+    oldDepr: document.getElementById('old-depr-val'),
+    newDepr: document.getElementById('new-depr-val'),
+
+    // Results in UI
+    resYears: document.getElementById('res-years'),
     totalDiff: document.getElementById('total-diff'),
     recommendation: document.getElementById('recommendation'),
     oldTotalCost: document.getElementById('old-total-cost'),
@@ -53,28 +71,11 @@ let chart = null;
 function init() {
     // Add event listeners
     Object.values(inputs).forEach(input => {
-        if (input) { // Check for nulls just in case
+        if (input) {
             input.addEventListener('input', () => {
                 updateDisplays();
                 calculate();
                 hideOptimization();
-            });
-        }
-    });
-
-    // New inputs listeners
-    const cmInput = document.getElementById('current-mileage');
-    if (cmInput) cmInput.addEventListener('input', () => { calculate(); });
-
-    const oiInput = document.getElementById('overhaul-interval');
-    if (oiInput) oiInput.addEventListener('input', () => { calculate(); });
-
-    // New inputs listeners
-    ['current-mileage', 'overhaul-interval'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            el.addEventListener('input', () => {
-                calculate();
             });
         }
     });
@@ -89,12 +90,37 @@ function init() {
 }
 
 function updateDisplays() {
-    displays.oldConsumption.textContent = inputs.oldConsumption.value + ' л';
-    displays.newConsumption.textContent = inputs.newConsumption.value + ' л';
-    displays.mileage.textContent = inputs.mileage.value + ' км';
-    displays.years.textContent = inputs.years.value + ' лет';
-    displays.breakdownProb.textContent = inputs.breakdownProb.value + '%';
-    displays.resYears.textContent = inputs.years.value;
+    // Format helper
+    const fmt = (num) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(num);
+    const fmtCurrency = (num) => fmt(num) + ' ₽';
+    const fmtMillions = (num) => {
+        if (num >= 1000000) return (num / 1000000).toFixed(1) + ' млн ₽';
+        if (num >= 1000) return (num / 1000).toFixed(0) + ' тыс ₽';
+        return num + ' ₽';
+    };
+
+    if (displays.oldPrice) displays.oldPrice.textContent = fmtMillions(inputs.oldPrice.value);
+    if (displays.oldCons) displays.oldCons.textContent = inputs.oldConsumption.value;
+    if (displays.oldMaint) displays.oldMaint.textContent = fmtCurrency(inputs.oldMaintenance.value);
+    if (displays.oldTax) displays.oldTax.textContent = fmtCurrency(inputs.oldTax.value);
+
+    if (displays.overhaulInt) displays.overhaulInt.textContent = (inputs.overhaulInterval.value / 1000) + ' тыс.';
+    if (displays.breakdownProb) displays.breakdownProb.textContent = inputs.breakdownProb.value + '%';
+    if (displays.repairCost) displays.repairCost.textContent = fmtCurrency(inputs.repairCost.value);
+
+    if (displays.newPrice) displays.newPrice.textContent = fmtMillions(inputs.newPrice.value);
+    if (displays.newCons) displays.newCons.textContent = inputs.newConsumption.value;
+    if (displays.newMaint) displays.newMaint.textContent = fmtCurrency(inputs.newMaintenance.value);
+    if (displays.newTax) displays.newTax.textContent = fmtCurrency(inputs.newTax.value);
+
+    if (displays.mileage) displays.mileage.textContent = fmt(inputs.mileage.value);
+    if (displays.years) displays.years.textContent = inputs.years.value;
+    if (displays.fuelPrice) displays.fuelPrice.textContent = fmtCurrency(inputs.fuelPrice.value);
+
+    if (displays.oldDepr) displays.oldDepr.textContent = inputs.oldDepr.value + '%';
+    if (displays.newDepr) displays.newDepr.textContent = inputs.newDepr.value + '%';
+
+    if (displays.resYears) displays.resYears.textContent = inputs.years.value;
 }
 
 function formatMoney(num) {
@@ -105,275 +131,66 @@ function hideOptimization() {
     displays.optResult.style.display = 'none';
 }
 
-function calculate() {
+function getInputs() {
     const years = parseInt(inputs.years.value);
     const mileage = parseInt(inputs.mileage.value);
     const fuelPrice = parseFloat(inputs.fuelPrice.value);
 
-    // Risk Calculation
-    const prob = parseInt(inputs.breakdownProb.value) / 100;
-    const repairPrice = parseInt(inputs.repairCost.value);
-    const annualRandomRisk = prob * repairPrice;
+    // Safety checks for elements that might be missing
+    // Current Mileage removed, default to 0 (Calculation is relative to NOW)
+    const startOdometer = 0;
 
-    // Overhaul Logic
-    // If element doesn't exist, default to 0/HighInterval
-    const cmEl = document.getElementById('current-mileage');
-    const startOdometer = cmEl ? parseInt(cmEl.value) : 180000;
+    // Logic: overhaul interval is distance from *now*, or absolute?
+    // If user inputs "250k" for interval. And starts at 0 (relative).
+    // Break happens in 250k km.
+    // If they meant "250k on odometer", and car has 180k. Break is in 70k.
+    // By removing "current mileage", we force the semantic "Distance until overhaul".
+    // Which is actually simpler for the average user ("Repair coming in 50k").
+    const overhaulInterval = parseInt(inputs.overhaulInterval.value);
 
-    const oiEl = document.getElementById('overhaul-interval');
-    const overhaulInterval = oiEl ? parseInt(oiEl.value) : 250000;
+    return {
+        years,
+        mileage,
+        fuelPrice,
+        breakdownProb: parseInt(inputs.breakdownProb.value),
+        repairPrice: parseInt(inputs.repairCost.value),
+        currentMileage: startOdometer,
+        overhaulInterval,
+        // Old
+        oldCons: parseFloat(inputs.oldConsumption.value),
+        oldMaint: parseInt(inputs.oldMaintenance.value),
+        oldTax: parseInt(inputs.oldTax.value),
+        oldPrice: parseInt(inputs.oldPrice.value),
+        oldDepr: parseFloat(inputs.oldDepr.value),
+        // New
+        newPrice: parseInt(inputs.newPrice.value),
+        newCons: parseFloat(inputs.newConsumption.value),
+        newMaint: parseInt(inputs.newMaintenance.value),
+        newTax: parseInt(inputs.newTax.value),
+        newDepr: parseFloat(inputs.newDepr.value),
+    };
+}
 
-    // Old Car Data
-    const oldCons = parseFloat(inputs.oldConsumption.value);
-    const oldMaint = parseInt(inputs.oldMaintenance.value);
-    const oldTax = parseInt(inputs.oldTax.value);
-    const oldStartVal = parseInt(inputs.oldPrice.value);
-    const oldDeprRate = parseFloat(inputs.oldDepr.value) / 100;
-
-    // New Car Data
-    const newPriceVal = parseInt(inputs.newPrice.value);
-    const newCons = parseFloat(inputs.newConsumption.value);
-    const newMaint = parseInt(inputs.newMaintenance.value);
-    const newTax = parseInt(inputs.newTax.value);
-    const newDeprRate = parseFloat(inputs.newDepr.value) / 100;
-
-    // Annual Fuel
-    const oldFuelYear = (mileage / 100) * oldCons * fuelPrice;
-    const newFuelYear = (mileage / 100) * newCons * fuelPrice;
-
-    // Annual Ops Base
-    const oldOpBase = oldFuelYear + oldMaint + oldTax + annualRandomRisk;
-    const newOpBase = newFuelYear + newMaint + newTax;
-
-    // Data for Chart
-    const labels = [];
-    const oldData = [];
-    const newData = [];
-
-    let cumOldSpend = 0;
-    let cumNewSpend = 0;
-    let currentOldVal = oldStartVal;
-    let currentNewVal = newPriceVal;
-
-    const switchCost = newPriceVal - oldStartVal;
-
-    let oldOdometer = startOdometer;
-    let overhaulCount = 0;
-
-
-
-    // Initial State: 
-    // If I keep old: Loss = 0 (Base). Future losses add up.
-    // If I switch: Immediate Loss = (NewPrice - OldPrice) (Cash Spent).
-    // Actually, simple TCO usually just sums expenses and price difference.
-    // Let's stick to the previous "Cumulative Cost" model but add Depreciation Loss.
-
-    // Initial cost to switch
-    // const switchCost = newPriceVal - oldStartVal; (Removed duplicate)
-
-    for (let i = 0; i <= years; i++) {
-        labels.push(`Год ${i}`);
-
-        if (i === 0) {
-            oldData.push(0);
-            newData.push(switchCost);
-        } else {
-            // Check for Overhaul this year
-            const prevOdo = oldOdometer;
-            oldOdometer += mileage;
-
-            const repairsTriggered = Math.floor(oldOdometer / overhaulInterval) - Math.floor(prevOdo / overhaulInterval);
-
-            let thisYearOverhaulCost = 0;
-            if (repairsTriggered > 0) {
-                thisYearOverhaulCost = repairsTriggered * repairPrice;
-                overhaulCount += repairsTriggered;
-            }
-
-            // Expenses
-            cumOldSpend += oldOpBase + thisYearOverhaulCost;
-            cumNewSpend += newOpBase;
-
-            // Depreciation Loss this year
-            const oldDeprLoss = currentOldVal * oldDeprRate;
-            currentOldVal -= oldDeprLoss;
-
-            const newDeprLoss = currentNewVal * newDeprRate;
-            currentNewVal -= newDeprLoss;
-
-            // Total Accumulated Cost = Cash Spent + Value Lost so far
-            // For Old: Ops + (StartValue - CurrentValue)
-            const totalOldLoss = cumOldSpend + (oldStartVal - currentOldVal);
-
-            // For New: SwitchCost + Ops + (StartNewValue - CurrentNewValue)
-            // Wait, SwitchCost IS the cash injection.
-            // If I pay 2M for new, 1M for old. I spent 1M cash.
-            // My asset box has 2M value.
-            // Loss = Cash Spent + (Value Drop).
-            // Cash spent initially = SwitchCost.
-            // Value Drop = NewPrice - CurrentNewVal.
-            const totalNewLoss = switchCost + cumNewSpend + (newPriceVal - currentNewVal); // Wait, SwitchCost is basically implied in depreciation if we consider Asset Value?
-            // No. Simple view:
-            // Old Route: Wallet - (Ops) + CarValue.
-            // New Route: Wallet - (Ops) - SwitchCost + CarValue.
-            // We want to graph "Total Cost", i.e. how much poorer am I getting?
-            // Cost = Ops + Depreciation.
-            // Let's use that.
-
-            // Redefine for chart:
-            // AccOld = Ops + TotalDeprOld
-            // AccNew = SwitchCost + Ops + TotalDeprNew - (Wait, SwitchCost isn't "Cost" if you get an asset back... it's only Cost if we count Opportunity Cost or just cashflow)
-
-            // Sticking to the most understandable User metric:
-            // "Money Gone from my life" = Expenses + Depreciation.
-            // But the SwitchCost is tricky. If I buy a 10M car, I haven't "lost" 10M, I swapped cash for car. I lose depreciation.
-            // BUT, usually people compare "keeping old" vs "buying new".
-            // If I buy new, I am "out of pocket" the difference immediately? No, that's partial asset swap.
-            // Let's rely on standard TCO: TCO = Purchase Price - Resale Value + Operating Costs.
-            // At year N:
-            // Old TCO = (StartValue - CurrentValue) + CumulativeOps.
-            // New TCO = (NewPrice - CurrentNewValue) + CumulativeOps + (Wait, do we count the price difference?)
-            // Yes. TCO of New Car vs Old Car.
-            // Actually, usually it's "TCO of changing".
-            // Cost of Changing = (NewPrice - OldStartValue) + (NewOps - OldOps) + (OldEndValue - NewEndValue)? Too complex.
-
-            // Let's stick to the previous graph logic which was robust:
-            // "Cumulative Cash Outflow + Asset Value Loss"
-            // Old Line: CumOps + (OldStart - OldCurr)
-            // New Line: CumOps + (NewStart - NewCurr) + (NewStart - OldStart) <-- The "Extra Capital" tied up?
-            // Logic Check:
-            // If New = 2M, Old = 1M.
-            // I pay 1M cash.
-            // Year 1:
-            // Old: lost 10% (100k) + Ops (100k) = 200k cost.
-            // New: lost 10% (200k) + Ops (50k).
-            // Is New Cost 250k?
-            // Plus I spent 1M cash? 
-            // If we treat the 1M as "Sunk", then yes.
-            // But usually we compare:
-            // Option A: Keep Old. Net Worth = OldValue - Ops.
-            // Option B: Buy New. Net Worth = NewValue - Ops - SwitchPrice.
-            // This is the best comparison. "Net Worth Delta".
-            // Graph: "Cumulative Cost" = (StartNetWorth - CurrentNetWorth).
-            // StartNetWorth = OldStartValue + CashOnHand(SwitchPrice).
-            // Option A (Keep): CashOnHand stays (0 loss). OldValue drops. Ops drain cash.
-            // Cost = (OldStart - OldCurr) + Ops.
-            // Option B (Switch): CashOnHand gone (become Car). NewValue drops. Ops drain.
-            // Cost = (NewStart - NewCurr) + Ops + (Wait... CashOnHand is gone to buy car, so it's not "Lost", it converted).
-            // The "Cost" of the switch is implicit in the Depreciation of a HIGHER value asset.
-            // AND Opportunity cost of capital (ignored for simplicity).
-            // So: Cost = Depreciation + Ops.
-            // Does the price difference matter?
-            // Only via Depreciation (10% of 3M is more than 10% of 1M).
-            // AND the fact that you SPENT the difference?
-            // IF you consider the money "spent" is gone... no, it's in the car.
-            // SO: TCO = Cumulative Ops + Cumulative Depreciation.
-
-            // BUT users usually want to know "When does the fuel saving cover the PURCHASE PRICE?".
-            // In that case, they treat Purchase Price as a COST.
-            // This is the "Break Even" view.
-
-            // Let's implement the "Break Even" view (Purchase Delta is a COST).
-            // Old Cost = Ops + Risk. (Ignore depreciation for break-even, or treat it as lost value).
-            // New Cost = Ops + PriceDelta - (NewValue - OldValue @ End)? 
-            // Let's stick to the script I used before:
-            // Old = Ops.
-            // New = Ops + UpgradePrice.
-            // This assumes New Car Value == Old Car Value at end? No, that's unfair.
-            // Correct Break Even: 
-            // Cost A = Ops_Old + (OldStart - OldEnd)
-            // Cost B = Ops_New + (NewStart - NewEnd) + (OpportunityCost?)
-
-            // Let's use the simplest robust TCO:
-            // TCO = Operating Costs + Depreciation.
-            // The user inputs "Upgrade Price" implicitly via NewPrice.
-            // If I follow the previous `script.js` which worked visually:
-            // It had: `accNew = upgradeCost`.
-            // This treats the entire upgrade cost as "Lost immediately". That's a "Cashflow Break Even" (assuming zero resale of new car).
-            // That is too harsh for new cars.
-
-            // BETTER MODEL:
-            // Cost = Operating Costs + (ValueLost).
-            // Old Data: Ops + (Start - Cur).
-            // New Data: Ops + (NewStart - NewCur) + (PriceDiff * 0.0)??
-            // No, if you pay 2M difference, and the car holds value, you haven't lost 2M.
-            // But you have tied up 2M.
-            // Let's stick to "Net Cost":
-            // Old: OpsSum + (OldStart - OldCurr)
-            // New: OpsSum + (NewStart - NewCurrent)
-            // ... This completely ignores the 2M you had to pay!
-            // Unless we assume Capital Cost?
-            // Users usually think: "I pay 2M. I save 100k/year. It takes 20 years."
-            // This implies they treat 2M as "Gone".
-            // This is the "Payback Period" model.
-            // I will use "Payback Period" model for the graph because it aligns with user intuition "Is it worth it?".
-
-            // Model:
-            // Old: Cumulative Ops.
-            // New: Cumulative Ops + UpgradePrice.
-            // (Previous model).
-            // MODIFIED: Subtract the "Residual Value Gain" from the New Line?
-            // New Line = UpgradePrice + NewOps - (NewCurr - OldCurr).
-            // i.e. "Extra Cost" = PricePaid + Ops - (ExtraEquityIHave).
-
-            // Let's try this "True Economic Cost" model.
-            // Cost = (UpgradeCash) + (Ops) - (EquityGain).
-            // EquityGain = (NewCarValue - OldCarValue).
-            // This accurately reflects "Richness".
-
-            const equityGain = currentNewVal - currentOldVal;
-            const realCostNew = switchCost + cumNewSpend - equityGain;
-            // Simplify: switchCost - equityGain = (NewStart - OldStart) - (NewCurr - OldCurr) 
-            // = (NewStart - NewCurr) - (OldStart - OldCurr).
-            // = NewDepr - OldDepr.
-            // So RealCostNew = CumNewOps + NewDeprTotal - OldDeprTotal.
-            // This compares "How much money I lost" in both scenarios relative to each other?
-            // Let's just plot TCO A vs TCO B.
-            // TCO = Ops + Depreciation.
-
-            // RE-DECISION: I will plot "Total Money Lost" (Expenses + Depreciation).
-            // This is scientifically accurate.
-            // Old Line: CumOps + (OldStart - OldCurr).
-            // New Line: CumOps + (NewStart - NewCurr).
-            // The "Upgrade Cost" doesn't appear explicitly, but matches the "High Depreciation" of the new car.
-            // Be careful: If depreciation is low, New might look cheaper immediately!
-            // BUT you still had to find 2M.
-            // This graph might confuse users who want "Payback".
-            // "Payback" graph: 
-            // Old: CumOps.
-            // New: CumOps + UpgradePrice - (ResaleDiff).
-            // ResaleDiff = (NewCur - OldCur).
-            // This converges to TCO.
-
-            const oldTotalLoss = cumOldSpend + (oldStartVal - currentOldVal);
-            const newTotalLoss = cumNewSpend + (newPriceVal - currentNewVal);
-
-            // We need to shift one line to represent the "Investment"? 
-            // No, "Total Loss" is the fair comparison.
-            // IF NewTotalLoss < OldTotalLoss, you are winning.
-
-            oldData.push(oldTotalLoss);
-            newData.push(newTotalLoss);
-        }
+function calculate() {
+    if (typeof TCOLogic === 'undefined') {
+        console.error('TCOLogic not loaded');
+        return;
     }
 
-    // Results in UI (Final Year)
-    const finalOld = oldData[years];
-    const finalNew = newData[years];
+    const data = getInputs();
+    const result = TCOLogic.calculate(data);
 
-    displays.oldTotalCost.textContent = formatMoney(finalOld);
-    displays.newTotalCost.textContent = formatMoney(finalNew);
+    // Update UI Elements
+    displays.oldTotalCost.textContent = formatMoney(result.finalOld);
+    displays.newTotalCost.textContent = formatMoney(result.finalNew);
 
     // Upgrade Cost (Cash required)
-    const cashRequired = newPriceVal - oldStartVal;
+    const cashRequired = data.newPrice - data.oldPrice;
+    displays.upgradeCost.textContent = formatMoney(cashRequired);
 
-    // Net Gain/Loss
-    displays.upgradeCost.textContent = formatMoney(cashRequired); // Static cash needed
+    displays.totalDiff.textContent = formatMoney(Math.abs(result.diff));
 
-    const diff = finalNew - finalOld;
-    displays.totalDiff.textContent = formatMoney(Math.abs(diff));
-
-    if (diff < 0) {
+    if (result.diff < 0) {
         displays.totalDiff.style.color = '#4ade80';
         displays.recommendation.textContent = "✅ Выгодно (Меньше потери стоимости)";
         displays.recommendation.style.color = "#4ade80";
@@ -385,11 +202,11 @@ function calculate() {
         displays.recommendation.style.backgroundColor = "rgba(248, 113, 113, 0.2)";
     }
 
-    updateChart(labels, oldData, newData);
+    updateChart(result);
 
     // Update Risk UI Text
     const riskLabel = document.querySelector('.sub-title');
-    if (riskLabel) riskLabel.textContent = `Риски (Капремонтов: ${overhaulCount})`;
+    if (riskLabel) riskLabel.textContent = `Риски (Капремонтов: ${result.overhaulCount})`;
 }
 
 function optimize() {
@@ -478,8 +295,9 @@ function optimize() {
     displays.optResult.scrollIntoView({ behavior: 'smooth' });
 }
 
-function updateChart(labels, oldData, newData) {
+function updateChart(result) {
     const ctx = document.getElementById('costChart').getContext('2d');
+    const { labels, oldData, newData, oldDeprData, newDeprData, finalOld, finalNew } = result;
 
     if (chart) {
         chart.destroy();
@@ -490,13 +308,22 @@ function updateChart(labels, oldData, newData) {
         return;
     }
 
+    // Prepare legend strings with Totals
+    const oldLabel = `Старый (Всего: ${formatMoney(finalOld)})`;
+    const newLabel = `Новый (Всего: ${formatMoney(finalNew)})`;
+    const diffVal = finalNew - finalOld;
+    const diffLabel = `Разница: ${formatMoney(diffVal)} ${diffVal > 0 ? '(Дороже)' : '(Дешевле)'}`;
+
+    // We add difference to the chart title or subtitle if possible, or append to legend
+    // Chart.js 3+ supports subtitles. Let's try adding it to title first line.
+
     chart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
             datasets: [
                 {
-                    label: 'Старый (Потери)',
+                    label: oldLabel,
                     data: oldData,
                     borderColor: '#ef4444', // Red
                     backgroundColor: 'rgba(239, 68, 68, 0.05)',
@@ -507,7 +334,7 @@ function updateChart(labels, oldData, newData) {
                     fill: true
                 },
                 {
-                    label: 'Новый (Потери)',
+                    label: newLabel,
                     data: newData,
                     borderColor: '#0ea5e9', // Sky Blue
                     backgroundColor: 'rgba(14, 165, 233, 0.05)',
@@ -516,6 +343,28 @@ function updateChart(labels, oldData, newData) {
                     pointHoverRadius: 4,
                     tension: 0.4,
                     fill: true
+                },
+                {
+                    label: 'Старый (Остаточная стоимость)',
+                    data: oldDeprData,
+                    borderColor: '#fca5a5', // Lighter red
+                    borderDash: [5, 5],
+                    backgroundColor: 'transparent',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0.4,
+                    fill: false
+                },
+                {
+                    label: 'Новый (Остаточная стоимость)',
+                    data: newDeprData,
+                    borderColor: '#7dd3fc', // Lighter blue
+                    borderDash: [5, 5],
+                    backgroundColor: 'transparent',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0.4,
+                    fill: false
                 }
             ]
         },
@@ -523,8 +372,21 @@ function updateChart(labels, oldData, newData) {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
+                title: {
+                    display: true,
+                    text: [
+                        'Сравнение совокупной стоимости владения (TCO)',
+                        diffLabel
+                    ],
+                    font: {
+                        size: 14,
+                        family: 'Inter'
+                    },
+                    color: '#64748b',
+                    padding: { bottom: 20 }
+                },
                 legend: {
-                    align: 'end',
+                    align: 'center',
                     labels: {
                         color: '#64748b',
                         font: { family: 'Inter', size: 11 },
@@ -542,6 +404,12 @@ function updateChart(labels, oldData, newData) {
                     callbacks: {
                         label: function (context) {
                             let label = context.dataset.label || '';
+                            // Remove totals from legend label for cleaner tooltip if needed, but keeping it is fine.
+                            // Simplified label for tooltip to avoid clutter?
+                            if (label.includes('(')) {
+                                label = label.split('(')[0].trim();
+                            }
+
                             if (label) {
                                 label += ': ';
                             }
@@ -555,6 +423,11 @@ function updateChart(labels, oldData, newData) {
             },
             scales: {
                 y: {
+                    title: {
+                        display: true,
+                        text: 'Затраты накопительно (Руб)',
+                        font: { size: 10 }
+                    },
                     grid: { color: '#e2e8f0', drawBorder: false },
                     ticks: { color: '#94a3b8', font: { family: 'Inter', size: 10 } }
                 },
