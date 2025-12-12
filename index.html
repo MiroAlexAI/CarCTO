@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCO Калькулятор</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="dashboard-wrapper">
+        <!-- Header Panel -->
+        <header class="header">
+            <div class="logo">AutoTCO</div>
+            <h1>Калькулятор стоимости владения</h1>
+        </header>
+
+        <!-- Column 1: Current Car -->
+        <section class="panel col-old">
+            <h2 class="panel-title">🚗 Текущий авто</h2>
+            <div class="scroll-area">
+                <div class="input-group">
+                    <label>Текущий пробег (км)</label>
+                    <input type="number" id="current-mileage" value="180000" step="1000">
+                </div>
+                <div class="input-group">
+                    <label>Рыночная цена</label>
+                    <input type="number" id="old-price" value="800000" step="10000">
+                </div>
+                <div class="input-group">
+                    <label>Расход (л/100км)</label>
+                    <div class="range-row">
+                        <input type="range" id="old-consumption" min="4" max="25" value="10" step="0.5">
+                        <span id="old-consumption-val">10</span>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>Ремонт/год (Руб)</label>
+                    <input type="number" id="old-maintenance" value="50000" step="1000">
+                </div>
+                <div class="input-group">
+                    <label>Налоги/Страховка</label>
+                    <input type="number" id="old-tax" value="10000" step="500">
+                </div>
+
+                <h3 class="sub-title">Риски (Старый)</h3>
+                <div class="input-group">
+                    <label>Ресурс до кап.ремонта (км)</label>
+                    <input type="number" id="overhaul-interval" value="250000" step="10000">
+                </div>
+                <div class="input-group">
+                    <label>Вероятность поломки</label>
+                    <div class="range-row">
+                        <input type="range" id="breakdown-prob" min="0" max="100" value="20" step="5">
+                        <span id="breakdown-prob-val">20%</span>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>Цена кап.ремонта</label>
+                    <input type="number" id="repair-cost" value="150000" step="5000">
+                </div>
+            </div>
+        </section>
+
+        <!-- Column 2: New Car -->
+        <section class="panel col-new">
+            <h2 class="panel-title">✨ Новый авто</h2>
+            <div class="scroll-area">
+                <div class="input-group">
+                    <label>Цена покупки</label>
+                    <input type="number" id="new-price" value="2500000" step="10000">
+                </div>
+                <div class="input-group">
+                    <label>Расход (л/100км)</label>
+                    <div class="range-row">
+                        <input type="range" id="new-consumption" min="4" max="25" value="7.5" step="0.5">
+                        <span id="new-consumption-val">7.5</span>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>ТО/год</label>
+                    <input type="number" id="new-maintenance" value="15000" step="1000">
+                </div>
+                <div class="input-group">
+                    <label>Налоги/КАСКО</label>
+                    <input type="number" id="new-tax" value="80000" step="1000">
+                </div>
+
+                <h3 class="sub-title">Параметры</h3>
+                <div class="input-group">
+                    <label>Пробег (км/год)</label>
+                    <div class="range-row">
+                        <input type="range" id="mileage" min="5000" max="100000" value="15000" step="1000">
+                        <span id="mileage-val">15000</span>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>Срок (лет)</label>
+                    <div class="range-row">
+                        <input type="range" id="years" min="1" max="10" value="5">
+                        <span id="years-val">5</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Column 3: Global Settings & Optimization -->
+        <section class="panel col-settings">
+            <h2 class="panel-title">⚙️ Настройки</h2>
+            <div class="scroll-area">
+                <div class="input-group">
+                    <label>Цена топлива (Руб/л)</label>
+                    <input type="number" id="fuel-price" value="55" step="0.5">
+                </div>
+                <div class="input-group">
+                    <label>Амортизация (Стар/Нов %)</label>
+                    <div class="dual-input">
+                        <input type="number" id="old-depreciation" value="10" placeholder="Old">
+                        <input type="number" id="new-depreciation" value="15" placeholder="New">
+                    </div>
+                </div>
+
+                <div class="opt-section">
+                    <button id="optimize-btn" class="btn-primary">Авто-подбор</button>
+
+                    <div id="optimization-result" class="opt-result hidden">
+                        <div class="opt-label">Макс. цена покупки:</div>
+                        <div class="opt-value" id="opt-price">-</div>
+                        <div class="opt-label">Целевой расход:</div>
+                        <div class="opt-value" id="opt-cons">-</div>
+                        <p id="opt-text" class="opt-desc"></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Column 4: Analytics -->
+        <section class="panel col-results">
+            <div class="results-header">
+                <div>
+                    <div class="label">Разница (<span id="res-years">5</span> лет)</div>
+                    <div class="diff-value" id="total-diff">0 ₽</div>
+                </div>
+                <div id="recommendation" class="badge">...</div>
+            </div>
+
+            <div class="chart-wrapper">
+                <canvas id="costChart"></canvas>
+            </div>
+
+            <div class="stats-footer">
+                <div class="mini-stat">
+                    <span>Потери (Старый)</span>
+                    <strong id="old-total-cost">0</strong>
+                </div>
+                <div class="mini-stat">
+                    <span>Потери (Новый)</span>
+                    <strong id="new-total-cost">0</strong>
+                </div>
+                <div class="mini-stat">
+                    <span>Доплата</span>
+                    <strong id="upgrade-cost">0</strong>
+                </div>
+            </div>
+        </section>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
