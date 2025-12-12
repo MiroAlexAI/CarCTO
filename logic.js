@@ -171,6 +171,99 @@ const TCOLogic = {
             overhaulCount,
             diff: newData[years] - oldData[years]
         };
+    },
+
+    /**
+     * Calculates optimization recommendations
+     * @param {Object} data - Input data object
+     * @returns {Object} - Recommendation result
+     */
+    optimize: function (data) {
+        const {
+            years,
+            mileage,
+            fuelPrice,
+            breakdownProb,
+            repairPrice,
+            oldCons,
+            oldMaint,
+            oldTax,
+            oldPrice,
+            oldDepr,
+            newCons,
+            newMaint,
+            newTax,
+            newDepr, // %
+            newPrice
+        } = data;
+
+        // 1. Calculate Old TCO at end of period
+        // We reuse the logic, but simplified to just get totals.
+        // Actually we can just call this.calculate(data).finalOld
+        // But calculate() does arrays. For speed, simple math is better, BUT consistency is key.
+        // Let's use simple math to mirror the breakdown.
+
+        const annualRisk = (breakdownProb / 100) * repairPrice;
+        const oldOpYear = ((mileage / 100) * oldCons * fuelPrice) + oldMaint + oldTax + annualRisk;
+
+        // Depreciation Total
+        const oldDeprRate = oldDepr / 100;
+        let oldVal = oldPrice;
+        for (let i = 0; i < years; i++) oldVal = oldVal * (1 - oldDeprRate);
+        const oldDeprTotal = oldPrice - oldVal;
+
+        const oldTCO = (oldOpYear * years) + oldDeprTotal;
+
+        // 2. New Ops (Fixed Params)
+        const newOpYear = ((mileage / 100) * newCons * fuelPrice) + newMaint + newTax;
+        const newOpsTotal = newOpYear * years;
+
+        // 3. Solve for MaxPrice (recPrice)
+        // Target: NewTCO <= OldTCO
+        // NewTCO = NewOpsTotal + NewDeprTotal
+        // NewDeprTotal = Price * DeprFactor
+        // DeprFactor = 1 - (1-rate)^years
+        const newDeprRate = newDepr / 100;
+        const deprFactor = 1 - Math.pow((1 - newDeprRate), years);
+
+        // Price * DeprFactor <= OldTCO - NewOpsTotal
+        const maxDeprAllowed = oldTCO - newOpsTotal;
+        let recPrice = 0;
+        if (maxDeprAllowed > 0) {
+            recPrice = maxDeprAllowed / deprFactor;
+        }
+
+        // 4. Solve for Target Consumption (recCons)
+        // Fixed Price (User Input)
+        // NewTCO = (Fuel + FixedMaint) * Years + FixedDepr
+        // Fuel * Years = OldTCO - FixedMaint*Years - FixedDepr
+
+        const currentNewDepr = newPrice * deprFactor;
+        const fixedMaintTax = newMaint + newTax;
+
+        // Max Fuel Budget Total
+        const maxFuelTotal = oldTCO - (fixedMaintTax * years) - currentNewDepr;
+
+        let recCons = 0;
+        if (maxFuelTotal > 0) {
+            const maxFuelYear = maxFuelTotal / years;
+            // FuelCost = (Mileage/100) * Cons * FuelPrice
+            // Cons = (FuelCost * 100) / (Mileage * FuelPrice)
+            recCons = (maxFuelYear * 100) / (mileage * fuelPrice);
+        }
+
+        return {
+            recPrice,
+            recCons,
+            params: {
+                years,
+                mileage,
+                oldTCO,
+                oldOpYear,
+                newOpYear,
+                deprFactor
+            }
+        };
     }
 };
 

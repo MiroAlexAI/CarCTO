@@ -210,86 +210,45 @@ function calculate() {
 }
 
 function optimize() {
-    // Goal: Find New Car Price where (NewTCO <= OldTCO) at Year 5 (or current 'years').
-    // NewTCO = NewOps + NewDepr.
-    // NewOps = (Fuel + Maint + Tax) * Years.
-    // NewDepr = Price * (1 - (1-rate)^Years).
-    // Target: NewOps + NewDepr <= OldTCO.
-    // Assuming NewOps is constant (based on current New Car Cons/Maint).
-    // Solve for Price.
-    // Price * DeprFactor <= OldTCO - NewOps.
-    // Price <= (OldTCO - NewOps) / DeprFactor.
+    const data = getInputs();
 
-    const years = parseInt(inputs.years.value);
-    const mileage = parseInt(inputs.mileage.value);
-    const fuelPrice = parseFloat(inputs.fuelPrice.value);
-    const newDeprRate = parseFloat(inputs.newDepr.value) / 100;
-
-    // 1. Calculate Old TCO at end of period
-    const prob = parseInt(inputs.breakdownProb.value) / 100;
-    const repair = parseInt(inputs.repairCost.value);
-    const annualRisk = prob * repair;
-    const oldOpYear = ((mileage / 100) * inputs.oldConsumption.value * fuelPrice) + parseInt(inputs.oldMaintenance.value) + parseInt(inputs.oldTax.value) + annualRisk;
-
-    const oldStartVal = parseInt(inputs.oldPrice.value);
-    const oldDeprRate = parseFloat(inputs.oldDepr.value) / 100;
-    let oldVal = oldStartVal;
-    for (let i = 0; i < years; i++) oldVal = oldVal * (1 - oldDeprRate);
-    const oldDeprTotal = oldStartVal - oldVal;
-
-    const oldTCO = (oldOpYear * years) + oldDeprTotal;
-
-    // 2. Calculate New Ops (Fixed Params)
-    const newOpYear = ((mileage / 100) * inputs.newConsumption.value * fuelPrice) + parseInt(inputs.newMaintenance.value) + parseInt(inputs.newTax.value);
-    const newOpsTotal = newOpYear * years;
-
-    // 3. Solve for MaxPrice
-    // NewTCO = NewOpsTotal + (Price * DeprFactor)
-    // Price * DeprFactor = NewTCO - NewOpsTotal
-    // MaxPrice * DeprFactor = OldTCO - NewOpsTotal
-
-    // DeprFactor = Total % lost over years
-    // P_end = P_start * (1-r)^y
-    // Loss = P_start - P_end = P_start * (1 - (1-r)^y)
-    const deprFactor = 1 - Math.pow((1 - newDeprRate), years);
-
-    const maxDeprAllowed = oldTCO - newOpsTotal;
-
-    let recPrice = 0;
-    if (maxDeprAllowed > 0) {
-        recPrice = maxDeprAllowed / deprFactor;
+    // Check if module is loaded
+    if (typeof TCOLogic === 'undefined') {
+        console.error('TCOLogic not loaded for optimization');
+        return;
     }
 
-    // 4. Solve for Target Consumption (Fixed Price)
-    // If Price is fixed to User Input, what consumption makes NewTCO == OldTCO?
-    // NewTCO = (Fuel + FixedMaint) * Years + FixedDepr.
-    // Fuel * Years = OldTCO - FixedMaint*Years - FixedDepr.
-    // FuelYear = (OldTCO - FixedMaint*Years - FixedDepr) / Years.
-    // FuelCons = (FuelYear / FuelPrice) * 100 / Mileage.
-
-    const currentNewPrice = parseInt(inputs.newPrice.value);
-    const currentNewDepr = currentNewPrice * deprFactor;
-    const fixedMaintTax = parseInt(inputs.newMaintenance.value) + parseInt(inputs.newTax.value);
-    const maxFuelTotal = oldTCO - (fixedMaintTax * years) - currentNewDepr;
-    const maxFuelYear = maxFuelTotal / years;
-    let recCons = (maxFuelYear / fuelPrice) * 100 / mileage;
+    const res = TCOLogic.optimize(data);
+    const { years } = data;
 
     // Display
     displays.optResult.style.display = 'block';
 
-    if (recPrice > 0) {
-        displays.optPrice.textContent = formatMoney(recPrice);
+    if (res.recPrice > 0) {
+        displays.optPrice.textContent = formatMoney(res.recPrice);
     } else {
-        displays.optPrice.textContent = "Невозможно (Слишком дорого содержать)";
+        displays.optPrice.textContent = "Невозможно (Слишком дорого)";
     }
 
-    if (recCons > 0) {
-        displays.optCons.textContent = recCons.toFixed(1) + " л/100км";
+    if (res.recCons > 0) {
+        displays.optCons.textContent = res.recCons.toFixed(1) + " л/100км";
     } else {
-        displays.optCons.textContent = "0 л (Нужно доплачивать чтобы ездить)";
+        displays.optCons.textContent = "0 л";
     }
 
-    displays.optText.textContent = `Чтобы выйти в ноль за ${years} лет по сравнению с текущим авто:`;
+    // Concise Summary parameters
+    const p = res.params;
+    const summaryHtml = `
+        <span style="font-size:0.85em; color:var(--text-secondary); display:block; margin-top:0.5rem; border-top:1px solid #dfe7ef; padding-top:0.5rem">
+          <strong>Учтено (${years} лет):</strong><br>
+          Пробег: ${data.mileage} км/год<br>
+          Старый TCO: ${formatMoney(p.oldTCO)}<br>
+          Риски: ${data.breakdownProb}% (Ремонт ${formatMoney(data.repairPrice)})<br>
+          Амортизация: Старый ${data.oldDepr}%, Новый ${data.newDepr}%
+        </span>
+    `;
+
+    displays.optText.innerHTML = `Чтобы выйти в ноль за ${years} лет:` + summaryHtml;
 
     // Scroll to it
     displays.optResult.scrollIntoView({ behavior: 'smooth' });
